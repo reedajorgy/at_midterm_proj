@@ -21,7 +21,7 @@ Rick Roll
 
 
 
-todo:
+
 create oscillators with args
     fm osc
     am osc
