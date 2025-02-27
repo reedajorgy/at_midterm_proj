@@ -4,7 +4,6 @@ https://www.pythonguis.com/tutorials/pyqt-signals-slots-events/
 '''
 
 from PyQt5.QtWidgets import QApplication, QWidget
-
 import sys
 
 
