@@ -1,5 +1,5 @@
 '''
-Reed backend sounds
+backend sounds
 '''
 
 from IPython.display import Audio, display

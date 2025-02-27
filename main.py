@@ -3,7 +3,6 @@ Reed midterm project
 https://www.pythonguis.com/tutorials/pyqt-signals-slots-events/
 '''
 
-
 from PyQt5.QtWidgets import QApplication, QWidget
 
 import sys
@@ -17,9 +16,3 @@ window.resize(500, 500)
 window.show()
 
 app.exec_()
-
-
-
-
-
-
