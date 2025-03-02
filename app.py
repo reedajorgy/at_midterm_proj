@@ -1,159 +1,204 @@
-'''
-Reed midterm project
-https://www.pythonguis.com/tutorials/pyqt-signals-slots-events/
-
-'''
-
-
 import sys
+import threading
+import queue
+import numpy as np
+import sounddevice as sd
+import mido
+from scipy.signal import square, sawtooth
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QDial,
-    QComboBox, QLabel, QCheckBox, QRadioButton, QButtonGroup
+    QComboBox, QLabel, QPushButton, QCheckBox, QRadioButton, QButtonGroup
 )
+from PyQt5.QtCore import Qt, QTimer
+
+# Constants
+SR = 44100  # Sample rate
+midi_queue = queue.Queue()
+
+
+def midi_to_freq(midi_note):
+    return 440.0 * (2 ** ((midi_note - 69) / 12))
+
+
+def process_midi(msg):
+    if msg.type == "note_on" and msg.velocity > 0:
+        freq = midi_to_freq(msg.note)
+        velocity = msg.velocity / 127
+        duration = 1.0
+        print(f"Received MIDI: Note {msg.note}, Freq {freq:.2f} Hz, Velocity {msg.velocity}")
+        midi_queue.put((freq, velocity, duration))
+
+
+def midi_listener(port_name):
+    with mido.open_input(port_name) as input_port:
+        for msg in input_port:
+            process_midi(msg)
+
+
+def list_midi_devices():
+    return mido.get_input_names()
+
+
+def generate_waveform(waveform, frequency, duration):
+    t = np.linspace(0, duration, int(SR * duration), endpoint=False)
+    if waveform == "sine":
+        return np.sin(2 * np.pi * frequency * t)
+    elif waveform == "square":
+        return square(2 * np.pi * frequency * t)
+    elif waveform == "sawtooth":
+        return sawtooth(2 * np.pi * frequency * t)
+    elif waveform == "triangle":
+        return sawtooth(2 * np.pi * frequency * t, width=0.5)
+    else:
+        raise ValueError(f"Invalid waveform type: {waveform}")
+
+
+def generate_am(frequency, mod_frequency, index, duration):
+    t = np.linspace(0, duration, int(SR * duration), endpoint=False)
+    carrier = np.sin(2 * np.pi * frequency * t)
+    modulator = (1 + index * np.sin(2 * np.pi * mod_frequency * t)) / 2
+    return carrier * modulator
+
+
+def generate_fm(frequency, mod_frequency, index, duration):
+    t = np.linspace(0, duration, int(SR * duration), endpoint=False)
+    modulator = index * np.sin(2 * np.pi * mod_frequency * t)
+    return np.sin(2 * np.pi * (frequency + modulator) * t)
+
+
+def play_sound(waveform, frequency, duration, output_device, synthesis_mode, mod_frequency, index, amplitude):
+    print(
+        f"Playing {synthesis_mode} {waveform} wave at {frequency} Hz for {duration} sec, ModFreq: {mod_frequency}, Index: {index}")
+    if synthesis_mode == "AM":
+        audio_signal = generate_am(frequency, mod_frequency, index, duration)
+    elif synthesis_mode == "FM":
+        audio_signal = generate_fm(frequency, mod_frequency, index, duration)
+    else:
+        audio_signal = generate_waveform(waveform, frequency, duration)
+    audio_signal *= amplitude
+    try:
+        print(f"Sending audio to output device {output_device}")
+        sd.play(audio_signal, samplerate=SR, device=output_device, blocking=False)
+    except Exception as e:
+        print(f"Error playing sound: {e}")
 
 class SynthControlPanel(QWidget):
     def __init__(self):
         super().__init__()
+        self.setStyleSheet("""
+            background-color: pink;
+            font-family: 'Comic Sans MS';
+            font-size: 14px;
+            color: #4B0082;
+        """)
 
-        # === Main Layout ===
+        # Main
         main_layout = QVBoxLayout()
 
-        # === Dials Layout (Carrier & Modulator Side by Side) ===
-        dial_layout = QHBoxLayout()
-
-        # Carrier Frequency Dial
-        self.carrier_dial = QDial()
-        self.carrier_dial.setMinimum(100)
-        self.carrier_dial.setMaximum(2000)
-        self.carrier_dial.setValue(500)
-        self.carrier_dial.setNotchesVisible(True)
-        self.carrier_dial.valueChanged.connect(self.update_carrier_label)
-
-        self.carrier_label = QLabel("Carrier Freq: 500 Hz")
-        carrier_layout = QVBoxLayout()
-        carrier_layout.addWidget(self.carrier_dial)
+        # Carrier
+        carrier_layout = QHBoxLayout()
+        self.carrier_dial = self.create_dial(100, 2000, 500, self.update_label)
+        self.carrier_label = QLabel("Carrier: 500 |(°Ω°)/")
         carrier_layout.addWidget(self.carrier_label)
-        dial_layout.addLayout(carrier_layout)
+        carrier_layout.addWidget(self.carrier_dial)
 
-        # Modulator Frequency Dial
-        self.modulator_dial = QDial()
-        self.modulator_dial.setMinimum(10)
-        self.modulator_dial.setMaximum(1000)
-        self.modulator_dial.setValue(50)
-        self.modulator_dial.setNotchesVisible(True)
-        self.modulator_dial.valueChanged.connect(self.update_modulator_label)
-
-        self.modulator_label = QLabel("Modulator Freq: 50 Hz")
-        modulator_layout = QVBoxLayout()
-        modulator_layout.addWidget(self.modulator_dial)
+        # Modulator
+        modulator_layout = QHBoxLayout()
+        self.modulator_dial = self.create_dial(10, 1000, 50, self.update_label)
+        self.modulator_label = QLabel("Modulator: 50 ( ｀皿´)｡ﾐ/")
         modulator_layout.addWidget(self.modulator_label)
-        dial_layout.addLayout(modulator_layout)
+        modulator_layout.addWidget(self.modulator_dial)
 
-        main_layout.addLayout(dial_layout)  # Add dials to main layout
-
-        # === Note Length Dial ===
-        self.length_dial = QDial()
-        self.length_dial.setMinimum(50)   # 50ms
-        self.length_dial.setMaximum(2000) # 2000ms (2s)
-        self.length_dial.setValue(500)
-        self.length_dial.setNotchesVisible(True)
-        self.length_dial.valueChanged.connect(self.update_length_label)
-
-        self.length_label = QLabel("Length 500 ms")
-        length_layout = QVBoxLayout()
-        length_layout.addWidget(self.length_dial)
-        length_layout.addWidget(self.length_label)
-        main_layout.addLayout(length_layout)
-
-        # === Modulation Index Dial (Visible Only for FM) ===
-        self.index_dial = QDial()
-        self.index_dial.setMinimum(1)
-        self.index_dial.setMaximum(10)
-        self.index_dial.setValue(2)
-        self.index_dial.setNotchesVisible(True)
-        self.index_dial.valueChanged.connect(self.update_index_label)
-
-        self.index_label = QLabel("Mod Index: 2")
-        index_layout = QVBoxLayout()
-        index_layout.addWidget(self.index_dial)
+        # index
+        index_layout = QHBoxLayout()
+        self.index_dial = self.create_dial(1, 10, 2, self.update_label)
+        self.index_label = QLabel("Mod Index: 2 (づ｡◕‿‿◕｡)づ")
         index_layout.addWidget(self.index_label)
-        main_layout.addLayout(index_layout)
+        index_layout.addWidget(self.index_dial)
 
-        # === Dropdown Menu for Waveform Selection ===
-        self.dropdown = QComboBox()
-        self.dropdown.addItems(["Sine", "Square", "Sawtooth", "Triangle"])
-        self.dropdown.currentIndexChanged.connect(self.dropdown_changed)
-
-        main_layout.addWidget(QLabel("Waveform:"))
-        main_layout.addWidget(self.dropdown)
-
-        # === Toggle Switch for AM/FM Selection ===
-        self.am_radio = QRadioButton("AM Synthesis")
-        self.fm_radio = QRadioButton("FM Synthesis")
-        self.fm_radio.setChecked(True)  # Default to FM
-
+        # Synthesis mode
+        self.fm_radio = QRadioButton("FM ꒰ ꒡⌓꒡꒱")
+        self.fm_radio.setChecked(True)
+        self.am_radio = QRadioButton("AM (っˆڡˆς)")
         self.synthesis_mode = QButtonGroup()
-        self.synthesis_mode.addButton(self.am_radio)
         self.synthesis_mode.addButton(self.fm_radio)
+        self.synthesis_mode.addButton(self.am_radio)
+        synthesis_layout = QHBoxLayout()
+        synthesis_layout.addWidget(self.fm_radio)
+        synthesis_layout.addWidget(self.am_radio)
 
-        self.am_radio.toggled.connect(self.synthesis_mode_changed)
-        self.fm_radio.toggled.connect(self.synthesis_mode_changed)
+        # Waveform
+        self.waveform_dropdown = QComboBox()
+        self.waveform_dropdown.addItems(["sine", "square", "sawtooth", "triangle"])
+        self.waveform_label = QLabel("Wav ≧◡≦")
+        waveform_layout = QHBoxLayout()
+        waveform_layout.addWidget(self.waveform_label)
+        waveform_layout.addWidget(self.waveform_dropdown)
 
-        mode_layout = QHBoxLayout()
-        mode_layout.addWidget(self.am_radio)
-        mode_layout.addWidget(self.fm_radio)
-        main_layout.addLayout(mode_layout)
+        # MIDI
+        self.midi_dropdown = QComboBox()
+        self.midi_dropdown.addItems(list_midi_devices())
+        self.midi_button = QPushButton("Start MIDI ~(≧▽≦)/~")
+        self.midi_button.clicked.connect(self.start_midi_listener)
 
-        # === Enable/Disable Modulation Toggle ===
-        self.toggle_modulation = QCheckBox("Enable Modulation")
-        self.toggle_modulation.setChecked(True)
-        self.toggle_modulation.toggled.connect(self.toggle_changed)
-        main_layout.addWidget(self.toggle_modulation)
+        midi_layout = QHBoxLayout()
+        midi_layout.addWidget(self.midi_dropdown)
+        midi_layout.addWidget(self.midi_button)
 
-        # === Set Layout ===
+        # layouts
+        main_layout.addLayout(carrier_layout)
+        main_layout.addLayout(modulator_layout)
+        main_layout.addLayout(index_layout)
+        main_layout.addLayout(synthesis_layout)
+        main_layout.addLayout(waveform_layout)  # Added waveform selector
+        main_layout.addLayout(midi_layout)
+
         self.setLayout(main_layout)
+        self.fm_radio.toggled.connect(self.toggle_mod_index_visibility)
 
-        # Initially show/hide modulation index dial
-        self.synthesis_mode_changed()
+        # Timer
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_midi_processing)
+        self.timer.start(50)
 
-    def update_carrier_label(self, value):
-        self.carrier_label.setText(f"Carrier {value} Hz")
+    def create_dial(self, min_val, max_val, init_val, callback):
+        dial = QDial()
+        dial.setMinimum(min_val)
+        dial.setMaximum(max_val)
+        dial.setValue(init_val)
+        dial.setNotchesVisible(True)
+        dial.valueChanged.connect(callback)
+        return dial
 
-    def update_modulator_label(self, value):
-        self.modulator_label.setText(f"Modulator {value} Hz")
+    def update_label(self, value):
+        sender = self.sender()
+        if sender == self.carrier_dial:
+            self.carrier_label.setText(f"Carrier: {value} |(°Ω°)/")
+        elif sender == self.modulator_dial:
+            self.modulator_label.setText(f"Modulator: {value} ( ｀皿´)｡ﾐ/")
+        elif sender == self.index_dial:
+            self.index_label.setText(f"Mod Index: {value} (づ｡◕‿‿◕｡)づ")
 
-    def update_length_label(self, value):
-        self.length_label.setText(f"{value} ms")
+    def update_midi_processing(self):
+        if not midi_queue.empty():
+            freq, velocity, duration = midi_queue.get()
+            synthesis_mode = "FM" if self.fm_radio.isChecked() else "AM"
+            mod_freq = self.modulator_dial.value()
+            mod_index = self.index_dial.value()
+            selected_waveform = self.waveform_dropdown.currentText()  # Get selected waveform
+            play_sound(selected_waveform, freq, duration, sd.default.device[1], synthesis_mode, mod_freq, mod_index, velocity)
 
-    def update_index_label(self, value):
-        self.index_label.setText(f"Mod Index: {value}")
+    def toggle_mod_index_visibility(self):
+        is_fm = self.fm_radio.isChecked()
+        self.index_dial.setVisible(not is_fm)
+        self.index_label.setVisible(not is_fm)
 
-    def dropdown_changed(self, index):
-        waveform = self.dropdown.currentText()
-        print(f"Selected waveform: {waveform}")
-
-    def synthesis_mode_changed(self):
-        mode = "AM" if self.am_radio.isChecked() else "FM"
-        print(f"Synthesis Mode: {mode}")
-
-        # Show Modulation Index Dial only if FM is selected
-        self.index_dial.setVisible(self.fm_radio.isChecked())
-        self.index_label.setVisible(self.fm_radio.isChecked())
-
-    def toggle_changed(self, checked):
-        print(f"Modulation Enabled: {checked}")
+    def start_midi_listener(self):
+        threading.Thread(target=midi_listener, args=(self.midi_dropdown.currentText(),), daemon=True).start()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = SynthControlPanel()
-    window.setWindowTitle("Synth Control Panel")
+    window.setWindowTitle("Kawaii-Ascii Synth (◞థ౪థ)ᴖ")
     window.show()
     sys.exit(app.exec_())
-
-
-
-
-
-
-
-
