@@ -8,7 +8,7 @@ def adsr_envelope(x, a=0.1, d=0.1, s=0.7, r=0.2, sampling_rate=44100):
     release_samples = int(r * sampling_rate)
     sustain_samples = n - (attack_samples + decay_samples + release_samples)
     if sustain_samples < 0:
-        raise ValueError("Invalid")
+        raise ValueError("Invalid") # Avoid error
     if attack_samples > 0:
         attack = np.linspace(0, 1, attack_samples)
     else:
