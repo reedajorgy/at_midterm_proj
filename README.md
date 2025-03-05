@@ -8,16 +8,18 @@ The Synth Control Panel is a Python-based synthesizer that provides real-time MI
 - **Waveform selection** (Sine, Square, Sawtooth, Triangle)
 - **Real-time MIDI input support**
 - **Adjustable Carrier and Modulator frequencies**
-- **Dynamic Modulation Index control** 
+- **Dynamic Modulation Index control**
 - **User-friendly GUI with dials and dropdowns**
+- **5 Second Playback (as per the "five big booms")**
 - **Comic Sans UI with Pink and Baby Blue theme (for aesthetic appeal!)**
+- **Distortion using comb filtering (Schroeder-esque)** for enhanced spatial effects
 
 ## Requirements
 To run the Synth Control Panel, ensure you have the following dependencies installed:
 
 ### Install dependencies using pip:
 ```sh
-pip install numpy sounddevice mido scipy PyQt5
+pip install requirements.txt
 ```
 
 ### Additional Requirements:
@@ -27,7 +29,7 @@ pip install numpy sounddevice mido scipy PyQt5
 ## Usage
 ### 1. Run the program
 ```sh
-python synth_control.py
+python app.py
 ```
 
 ### 2. Select the synthesis mode
@@ -40,6 +42,8 @@ Choose between **FM Synthesis** and **AM Synthesis** using the radio buttons.
 - **Modulator Frequency Dial**: Adjusts the frequency of the modulating signal.
 - **Modulation Index Dial**: Adjusts the modulation depth (only visible in AM mode).
 - **Waveform Selection Dropdown**: Choose between sine, square, sawtooth, or triangle waves.
+- **Distortion Amount Slider**: Controls the depth of the Schroeder distortion effect.
+- **Decay Control**: Adjusts how long the distortion effect persists.
 
 ### 4. Connect MIDI
 - Select an available MIDI input device from the dropdown.
@@ -56,6 +60,7 @@ Choose between **FM Synthesis** and **AM Synthesis** using the radio buttons.
 - `play_sound()`: Generates and plays the synthesized audio.
 - `update_midi_processing()`: Processes incoming MIDI data and triggers sound.
 - `toggle_mod_index_visibility()`: Hides or shows the modulation index based on synthesis mode.
+- `schrader_distort()`: Implements Schroeder reverb with comb filtering for natural spatial effects.
 
 ## Future Enhancements
 - **MIDI Out Support** for external synth control.
