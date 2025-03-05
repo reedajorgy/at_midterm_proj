@@ -1,45 +1,34 @@
 import numpy as np
-import sounddevice as sd
-from scipy.signal import square, sawtooth, lfilter
-
-# Constants
-SR = 44100  # Sample rate
-
-def adsr_envelope(duration, attack, decay, sustain, release):
-    """Generate an ADSR envelope."""
-    t = np.linspace(0, duration, int(SR * duration), endpoint=False)
-    env = np.zeros_like(t)
-    
-    attack_samples = int(attack * SR)
-    decay_samples = int(decay * SR)
-    release_samples = int(release * SR)
-    sustain_level = sustain
-    
+def adsr_envelope(x, a=0.1, d=0.1, s=0.7, r=0.2, sampling_rate=44100):
+    n = len(x)
+    attack_samples = int(a * sampling_rate)
+    decay_samples = int(d * sampling_rate)
+    release_samples = int(r * sampling_rate)
+    sustain_samples = n - (attack_samples + decay_samples + release_samples)
+    if sustain_samples < 0:
+        raise ValueError("Invalid")
     if attack_samples > 0:
-        env[:attack_samples] = np.linspace(0, 1, attack_samples)
-    if decay_samples > 0:
-        env[attack_samples:attack_samples + decay_samples] = np.linspace(1, sustain_level, decay_samples)
-    sustain_samples = len(t) - (attack_samples + decay_samples + release_samples)
-    if sustain_samples > 0:
-        env[attack_samples + decay_samples: -release_samples] = sustain_level
-    if release_samples > 0:
-        env[-release_samples:] = np.linspace(sustain_level, 0, release_samples)
-    
-    return env
-
-def generate_waveform(waveform, frequency, duration):
-    """Generate basic waveforms."""
-    t = np.linspace(0, duration, int(SR * duration), endpoint=False)
-    if waveform == "sine":
-        return np.sin(2 * np.pi * frequency * t)
-    elif waveform == "square":
-        return square(2 * np.pi * frequency * t)
-    elif waveform == "sawtooth":
-        return sawtooth(2 * np.pi * frequency * t)
-    elif waveform == "triangle":
-        return sawtooth(2 * np.pi * frequency * t, width=0.5)
+        attack = np.linspace(0, 1, attack_samples)
     else:
-        raise ValueError(f"Invalid waveform type: {waveform}")
+        attack = np.array([])
+    if s is False:
+        decay = np.linspace(1, 0, decay_samples)
+        sustain = np.array([])
+        release = np.array([])
+    else:
+        decay = np.linspace(1, s, decay_samples)
+        sustain = np.full(sustain_samples, s)
+        release = np.linspace(s, 0, release_samples)
+    envelope = np.concatenate([attack, decay, sustain, release])
+    envelope = np.resize(envelope, n)
+    modulated_sound = x * envelope
+    return modulated_sound, envelope
+duration = 2
+frequency = 440
+sampling_rate = 44100
+t = np.linspace(0, duration, int(sampling_rate * duration), endpoint=False)
+input_signal = np.sin(2 * np.pi * frequency * t)
+enveloped_signal, envelope = adsr_envelope(input_signal, a=0.1, d=0.2, s=0.6, r=0.3)
 
 def apply_reverb(signal, reverb_amount=0.3, decay=0.6):
     """Simple Schroeder Reverb Effect."""
