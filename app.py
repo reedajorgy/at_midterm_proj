@@ -4,6 +4,7 @@ import queue
 import numpy as np
 import sounddevice as sd
 import mido
+from paddle.base.libpaddle.eager.ops.legacy import decayed_adagrad
 from scipy.signal import square, sawtooth
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QDial,
@@ -11,20 +12,19 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 
+import utilities as utils
+
+
 # Constants
 SR = 44100  # Sample rate
 midi_queue = queue.Queue()
 
 
-def midi_to_freq(midi_note):
-    return 440.0 * (2 ** ((midi_note - 69) / 12))
-
-
 def process_midi(msg):
     if msg.type == "note_on" and msg.velocity > 0:
-        freq = midi_to_freq(msg.note)
+        freq = utils.midi_to_freq(msg.note)
         velocity = msg.velocity / 127
-        duration = 1.0
+        duration = 5.0
         print(f"Received MIDI: Note {msg.note}, Freq {freq:.2f} Hz, Velocity {msg.velocity}")
         midi_queue.put((freq, velocity, duration))
 
@@ -35,11 +35,20 @@ def midi_listener(port_name):
             process_midi(msg)
 
 
-def list_midi_devices():
-    return mido.get_input_names()
+def schrader_distort(signal, reverb_amount=0.3, decay=0.6):
+    delay_times = [0.029, 0.037, 0.041, 0.053]
+    gains = [decay * (0.7 ** i) for i in range(len(delay_times))]    # prevents infinite feedback
+    reverb_signal = np.zeros(len(signal))
+    for delay, gain in zip(delay_times, gains):    # processing each delay time seperately, making comb filt
+        delay_samples = int(delay * SR)
+        if delay_samples < len(signal):
+            reverb_signal[delay_samples:] += np.tanh(signal[:-delay_samples] * gain)    # non linear transform
+    # Smooth mixing of dry and wet signals
+    wet_signal = signal * (1 - reverb_amount) + reverb_signal * reverb_amount    # where distortin magic happens
+    return wet_signal
 
 
-def generate_waveform(waveform, frequency, duration):
+def generate_waveform(waveform, frequency, duration=1):
     t = np.linspace(0, duration, int(SR * duration), endpoint=False)
     if waveform == "sine":
         return np.sin(2 * np.pi * frequency * t)
@@ -67,8 +76,7 @@ def generate_fm(frequency, mod_frequency, index, duration):
 
 
 def play_sound(waveform, frequency, duration, output_device, synthesis_mode, mod_frequency, index, amplitude):
-    print(
-        f"Playing {synthesis_mode} {waveform} wave at {frequency} Hz for {duration} sec, ModFreq: {mod_frequency}, Index: {index}")
+
     if synthesis_mode == "AM":
         audio_signal = generate_am(frequency, mod_frequency, index, duration)
     elif synthesis_mode == "FM":
@@ -76,6 +84,7 @@ def play_sound(waveform, frequency, duration, output_device, synthesis_mode, mod
     else:
         audio_signal = generate_waveform(waveform, frequency, duration)
     audio_signal *= amplitude
+
     try:
         print(f"Sending audio to output device {output_device}")
         sd.play(audio_signal, samplerate=SR, device=output_device, blocking=False)
@@ -116,6 +125,20 @@ class SynthControlPanel(QWidget):
         index_layout.addWidget(self.index_label)
         index_layout.addWidget(self.index_dial)
 
+        # dist length
+        dist_length = QHBoxLayout()
+        self.dist_dial = self.create_dial(1, 1000, 2, self.update_label)
+        self.dist_label = QLabel("Dist Orshun ┌П┐(ಠ_ಠ): 2")
+        dist_length.addWidget(self.dist_label)
+        dist_length.addWidget(self.dist_dial)
+
+        # Decay
+        decay_layout = QHBoxLayout()
+        self.decay_dial = self.create_dial(1, 1000, 2, self.update_label)
+        self.decay_label = QLabel("DECASTYSYD ／人◕ __ ◕人＼  2")
+        decay_layout.addWidget(self.decay_label)
+        decay_layout.addWidget(self.decay_dial)
+
         # Synthesis mode
         self.fm_radio = QRadioButton("FM ꒰ ꒡⌓꒡꒱")
         self.fm_radio.setChecked(True)
@@ -137,7 +160,7 @@ class SynthControlPanel(QWidget):
 
         # MIDI
         self.midi_dropdown = QComboBox()
-        self.midi_dropdown.addItems(list_midi_devices())
+        self.midi_dropdown.addItems(utils.list_midi_devices())
         self.midi_button = QPushButton("Start MIDI ~(≧▽≦)/~")
         self.midi_button.clicked.connect(self.start_midi_listener)
 
@@ -152,6 +175,8 @@ class SynthControlPanel(QWidget):
         main_layout.addLayout(synthesis_layout)
         main_layout.addLayout(waveform_layout)  # Added waveform selector
         main_layout.addLayout(midi_layout)
+        main_layout.addLayout(dist_length)
+        main_layout.addLayout(decay_layout)
 
         self.setLayout(main_layout)
         self.fm_radio.toggled.connect(self.toggle_mod_index_visibility)
@@ -178,23 +203,49 @@ class SynthControlPanel(QWidget):
             self.modulator_label.setText(f"Modulator: {value} ( ｀皿´)｡ﾐ/")
         elif sender == self.index_dial:
             self.index_label.setText(f"Mod Index: {value} (づ｡◕‿‿◕｡)づ")
+        elif sender == self.dist_dial:
+            self.dist_label.setText(f"Dist Orshun ┌П┐(ಠ_ಠ) {value}")
+        elif sender == self.decay_dial:
+            self.decay_label.setText(f"DECASTYSYD ／人◕ __ ◕人＼ {value}")
+
+    def toggle_mod_index_visibility(self):
+        is_fm = self.fm_radio.isChecked()
+        self.index_dial.setVisible(is_fm)
+        self.index_label.setVisible(is_fm)
+
+    def start_midi_listener(self):
+        threading.Thread(target=midi_listener, args=(self.midi_dropdown.currentText(),), daemon=True).start()
 
     def update_midi_processing(self):
         if not midi_queue.empty():
             freq, velocity, duration = midi_queue.get()
+            selected_waveform = self.waveform_dropdown.currentText()
             synthesis_mode = "FM" if self.fm_radio.isChecked() else "AM"
+
+            # dials
             mod_freq = self.modulator_dial.value()
             mod_index = self.index_dial.value()
-            selected_waveform = self.waveform_dropdown.currentText()  # Get selected waveform
-            play_sound(selected_waveform, freq, duration, sd.default.device[1], synthesis_mode, mod_freq, mod_index, velocity)
+            reverb_amount = self.dist_dial.value() / 100  # Normalize (1-100 → 0-1)
+            decay = self.decay_dial.value() / 100  # norm (1-100 → 0-1)
 
-    def toggle_mod_index_visibility(self):
-        is_fm = self.fm_radio.isChecked()
-        self.index_dial.setVisible(not is_fm)
-        self.index_label.setVisible(not is_fm)
+            # base
+            if synthesis_mode == "AM":
+                sound = generate_am(freq, mod_freq, mod_index, duration)
+            elif synthesis_mode == "FM":
+                sound = generate_fm(freq, mod_freq, mod_index, duration)
+            else:
+                sound = generate_waveform(selected_waveform, freq, duration)
 
-    def start_midi_listener(self):
-        threading.Thread(target=midi_listener, args=(self.midi_dropdown.currentText(),), daemon=True).start()
+            sound *= velocity  # Velocity affects volume
+
+            processed_sound = schrader_distort(sound, reverb_amount, decay)
+
+            # play
+            try:
+                print(f"Playing sound with Reverb: {reverb_amount}, Decay: {decay}, Synthesis Mode: {synthesis_mode}")
+                sd.play(processed_sound, samplerate=SR, blocking=False)
+            except Exception as e:
+                print(f"Error playing sound: {e}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
