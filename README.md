@@ -11,6 +11,7 @@ The Synth Control Panel is a Python-based synthesizer that provides real-time MI
 - **Dynamic Modulation Index control**
 - **User-friendly GUI with dials and dropdowns**
 - **5 Second Playback (as per the "five big booms")**
+- **A premade built in ADSR!!!!**
 - **Comic Sans UI with Pink and Baby Blue theme (for aesthetic appeal!)**
 - **Distortion using comb filtering (Schroeder-esque)** for enhanced spatial effects
 
@@ -64,12 +65,12 @@ Choose between **FM Synthesis** and **AM Synthesis** using the radio buttons.
 
 ## Future Enhancements
 - **MIDI Out Support** for external synth control.
-- **Envelope Generator** for better note shaping.
-- **Effects Processing** (Reverb, Delay, Distortion).
+- **Envelope Generator Controls** for better note shaping.
+- **Effects Processing** (More Reverb, Delay, Distortion etc).
 - **Waveform Visualization** in real time.
 
 ## Acknowledgments
-Reed, Adam, Iris for GTMT Intro Audio Tech II
+Reed, Adam, Iris for GTMT Intro Audio Tech II Midterm
 
 ## License
 This project is licensed under the MIT License.
