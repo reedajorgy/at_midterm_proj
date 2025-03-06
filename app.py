@@ -4,7 +4,6 @@ import queue
 import numpy as np
 import sounddevice as sd
 import mido
-from paddle.base.libpaddle.eager.ops.legacy import decayed_adagrad
 from scipy.signal import square, sawtooth
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QDial,
@@ -60,6 +59,31 @@ def generate_waveform(waveform, frequency, duration=1):
         return sawtooth(2 * np.pi * frequency * t, width=0.5)
     else:
         raise ValueError(f"Invalid waveform type: {waveform}")
+
+def adsr_envelope(x, a=0.9, d=0.9, s=0.7, r=0.9, sampling_rate=44100):
+    n = len(x)
+    attack_samples = int(a * sampling_rate)
+    decay_samples = int(d * sampling_rate)
+    release_samples = int(r * sampling_rate)
+    sustain_samples = n - (attack_samples + decay_samples + release_samples)
+    if sustain_samples < 0:
+        raise ValueError("Invalid")
+    if attack_samples > 0:
+        attack = np.linspace(0, 1, attack_samples)
+    else:
+        attack = np.array([])
+    if s is False:
+        decay = np.linspace(1, 0, decay_samples)
+        sustain = np.array([])
+        release = np.array([])
+    else:
+        decay = np.linspace(1, s, decay_samples)
+        sustain = np.full(sustain_samples, s)
+        release = np.linspace(s, 0, release_samples)
+    envelope = np.concatenate([attack, decay, sustain, release])
+    envelope = np.resize(envelope, n)
+    modulated_sound = x * envelope
+    return modulated_sound
 
 
 def generate_am(frequency, mod_frequency, index, duration):
@@ -230,12 +254,11 @@ class SynthControlPanel(QWidget):
 
             # base
             if synthesis_mode == "AM":
-                sound = generate_am(freq, mod_freq, mod_index, duration)
+                sound = adsr_envelope(generate_am(freq, mod_freq, mod_index, duration))
             elif synthesis_mode == "FM":
-                sound = generate_fm(freq, mod_freq, mod_index, duration)
+                sound = adsr_envelope(generate_fm(freq, mod_freq, mod_index, duration))
             else:
                 sound = generate_waveform(selected_waveform, freq, duration)
-
             sound *= velocity  # Velocity affects volume
 
             processed_sound = schrader_distort(sound, reverb_amount, decay)

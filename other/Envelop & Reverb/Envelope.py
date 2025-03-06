@@ -1,4 +1,7 @@
 import numpy as np
+
+
+
 def adsr_envelope(x, a=0.1, d=0.1, s=0.7, r=0.2, sampling_rate=44100):
     n = len(x)
     attack_samples = int(a * sampling_rate)
