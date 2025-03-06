@@ -1,6 +1,7 @@
 import numpy as np
 import sounddevice as sd
 # Create adsr Envelope
+
 def adsr_envelope(x, a=0.1, d=0.1, s=0.7, r=0.2, sampling_rate=44100):
     n = len(x)
     attack_samples = int(a * sampling_rate)
@@ -8,7 +9,7 @@ def adsr_envelope(x, a=0.1, d=0.1, s=0.7, r=0.2, sampling_rate=44100):
     release_samples = int(r * sampling_rate)
     sustain_samples = n - (attack_samples + decay_samples + release_samples)
     if sustain_samples < 0:
-        raise ValueError("Invalid") # Avoid error
+        raise ValueError("Error") # Avoid error
     if attack_samples > 0:
         attack = np.linspace(0, 1, attack_samples)
     else:
@@ -35,7 +36,7 @@ enveloped_signal, envelope = adsr_envelope(input_signal, a=0.1, d=0.2, s=0.6, r=
 sd.play(enveloped_signal, samplerate=sampling_rate)
 
 def apply_reverb(signal, reverb_amount=0.3, decay=0.6):
-    """Simple Schroeder Reverb Effect."""
+    """Schroeder Reverb Effect."""
     delay_samples = int(0.03 * SR)  # 30ms delay
     feedback = decay
     
@@ -47,7 +48,7 @@ def apply_reverb(signal, reverb_amount=0.3, decay=0.6):
     return signal * (1 - reverb_amount) + reverb_signal * reverb_amount
 
 def play_sound(waveform, frequency, duration, attack, decay, sustain, release, reverb_amount=0.3, amplitude=1.0):
-    """Generate and play a sound with ADSR envelope and Reverb."""
+    """Generate and play a sound with ADSR and Reverb."""
     audio_signal = generate_waveform(waveform, frequency, duration)
     envelope = adsr_envelope(duration, attack, decay, sustain, release)
     audio_signal *= envelope * amplitude
@@ -58,7 +59,7 @@ def play_sound(waveform, frequency, duration, attack, decay, sustain, release, r
     try:
         sd.play(audio_signal, samplerate=SR, blocking=False)
     except Exception as e:
-        print(f"Error playing sound")
+        print(f"Error")
 
 # Example usage
 if __name__ == "__main__":
